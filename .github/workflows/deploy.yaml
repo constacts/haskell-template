@@ -1,0 +1,46 @@
+name: "Deploy"
+on:
+  push:
+    tags:
+      - '*'
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/nix-installer-action@main
+
+      - name: Install omnix
+        run: nix --accept-flake-config profile install "github:juspay/omnix"
+
+      - name: Build all flake outputs
+        run: om ci
+
+      - name: Build docker image
+        run: |-
+          echo "ORG_IMAGE=$(docker load -i $(nix build .#dockerImage --print-out-paths) | sed -n '$s/^Loaded image: //p')" >> $GITHUB_ENV
+
+      - name: Set SHA_SHORT Env
+        run: |-
+          echo "SHA_SHORT=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+
+      - name: Set IMAGE Env 
+        run: |-
+          echo "IMAGE=gcr.io/constacts/haskell-template:${{ env.SHA_SHORT }}" >> $GITHUB_ENV
+
+      - name: Tag docker image 
+        run: docker image tag "${{ env.ORG_IMAGE }}" ${{ env.IMAGE }}
+
+      - name: Init gcloud
+        run: |
+          gcloud --quiet config set project constacts
+          echo "${{ secrets.GKE_SA_KEY }}" | base64 --decode > ${HOME}/gcloud.json
+          gcloud --quiet auth activate-service-account deploy@constacts.iam.gserviceaccount.com --key-file=${HOME}/gcloud.json
+          gcloud --quiet auth configure-docker
+
+      - name: Push docker image 
+        run: docker push ${{ env.IMAGE }}

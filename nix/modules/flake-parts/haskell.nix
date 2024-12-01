@@ -10,15 +10,6 @@
     haskellProjects.default = {
       # To avoid unnecessary rebuilds, we filter projectRoot:
       # https://community.flake.parts/haskell-flake/local#rebuild
-      projectRoot = builtins.toString (lib.fileset.toSource {
-        inherit root;
-        fileset = lib.fileset.unions [
-          (root + /src)
-          (root + /haskell-template.cabal)
-          (root + /LICENSE)
-          (root + /README.md)
-        ];
-      });
 
       # The base package set (this value is the default)
       # basePackages = pkgs.haskellPackages;
@@ -52,6 +43,20 @@
 
       # What should haskell-flake add to flake outputs?
       autoWire = [ "packages" "apps" "checks" ]; # Wire all but the devShell
+    };
+
+    packages.dockerImage = pkgs.dockerTools.buildImage {
+      name = "haskell-template";
+      copyToRoot = pkgs.buildEnv {
+        paths = with pkgs; [
+          self'.packages.default
+        ];
+        name = "myapi-root";
+        pathsToLink = [ "/bin" ];
+      };
+      config = {
+        Cmd = [ "${pkgs.lib.getExe self'.packages.default}" ];
+      };
     };
 
     # Default package & app.
